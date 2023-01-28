@@ -1,6 +1,6 @@
 StormFox = {}
 StormFox.Version = 1.63
-StormFox.WorkShopVersion = false--game.IsDedicated()
+StormFox.WorkShopVersion = true --game.IsDedicated()
 function StormFox.Msg(...)
 	local a = {...}
 	if StormFox.Language then

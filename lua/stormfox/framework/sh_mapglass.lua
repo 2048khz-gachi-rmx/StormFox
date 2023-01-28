@@ -20,6 +20,116 @@ There might still be bugs...
 Tested from HL1 to CS:GO maps.
 ---------------------------------------------------------------------------]]
 StormFox.MAP = {}
+StormFox.TestingBitbuf = false
+StormFox.UseBitbuf = true
+
+-- FProfiler.start()
+local bbuf = StormFox.UseBitbuf and BitBuffer:new()
+local bfl
+
+local whitelist = {
+	["ReadString"] = "Read",
+}
+
+local READ_PAGE = bit.lshift(1, 18)
+
+if bbuf then
+	local ring = RingBuffer(10)
+
+	function bbuf:ImitateFile()
+		local fl = self.cmpFile
+		fl:Seek(0)
+
+		function bbuf:PageFault()
+			local bufCur = self:Tell()
+			local bufSz = self:Size()
+
+			local flCur, flSz = fl:Tell(), fl:Size()
+			local toRead = math.min(flSz - flCur, bufCur - bufSz + READ_PAGE)
+
+			-- move to end of buf
+			self:Seek(bufSz)
+			fl:Seek(bufSz)
+			self:WriteString(fl:Read(toRead), toRead)
+
+			-- move back to read cursor
+			self:Seek(bufCur)
+
+			fl:Seek(flCur) -- move file cursor back, too
+			return true
+		end
+
+		if not StormFox.TestingBitbuf then
+			self.Close = function() fl:Close() end
+			self.Read = self.ReadString
+			return
+		end
+
+		local in_dtor = false
+
+		-- tee function calls to gmod's File as well to check whether bitbuf works correctly
+		-- done quick, dirty and ugly
+
+		for k,v in pairs(BitBuffer) do
+			local flk = whitelist[k] or k
+			if not fl[flk] and isfunction(v) then continue end
+
+			self["real" .. k] = self[k]
+
+			bbuf[k] = function(self, ...)
+				if in_dtor then return self["real" .. k] (self, ...) end
+
+				in_dtor = true
+				-- print(">> call:", k, ...)
+
+				local ours = BitBuffer[k] (self, ...)
+				local compare = fl[flk] (fl, ...)
+
+				in_dtor = false
+
+				ring:Add(k)
+
+				local is_nan = not (compare == compare) and not (ours == ours)
+				if compare ~= ours and not is_nan then
+					if isstring(compare) and isstring(ours) then
+						if #compare + #ours < 200 then
+							longprintf("epic failure: `:%s()` => file [%s] vs bitbuf [%s]", k, compare, ours)
+						else
+							print("too long of a print")
+						end
+						printf("\tlengths: %d vs. %d", #compare, #ours)
+					else
+						longprintf("epic failure: `:%s()` => file [%s] vs bitbuf [%s]", k, compare, ours)
+					end
+
+					printf("\tbitbuf: %s", self:realTell())
+					printf("\tfile: %s", fl:Tell())
+
+					for i=-1, -10, -1 do
+						printf("\t%s", ring:GetIn(i))
+					end
+
+					printf("dump: %s %s", self[1], self[2])
+					self:_spew(self[1] - 2, self[1] + 2)
+
+					file.Write("file.txt", compare)
+					file.Write("bitbuf.txt", ours)
+
+					bbuf = nil
+					errorf("^")
+				end
+
+				return ours
+			end
+		end
+
+		bbuf.Read = bbuf.ReadString
+		bbuf.Close = function() fl:Close() end
+	end
+end
+
+local start = 0
+
 -- Local vars
 	local file = table.Copy(file)
 	local Vector = Vector
@@ -42,19 +152,14 @@ StormFox.MAP = {}
 	local CONTENTS_SOLID = 0x1
 -- Read functions
 	local function ReadFloatSafe( f )
-		if f:ReadULong() > 0xff800000 then return 0 / 0 end
-		f:Seek(f:Tell() - 4)
 		return f:ReadFloat()
 	end
+
 	local function ReadBits( f, bits ) -- save.WriteInt
-		local b = f:Read(bits)
-		local i = 0
-		for n,v in pairs( {string.byte(b,1,bits)} ) do
-			i = i + v * (256 ^ (n - 1) )
-		end
-		if i > 2147483647 then i = i - 4294967296 end
-		return i
+		assert(bits == 4)
+		return f:ReadLong()
 	end
+
 	local function ReadVec( f )
 		return Vector( ReadFloatSafe(f),ReadFloatSafe(f),ReadFloatSafe(f))
 	end
@@ -119,15 +224,58 @@ StormFox.MAP = {}
 	local conVar = GetConVar("sf_overridemapsounds")
 	local function PAKSearch(f,len)
 		if not conVar:GetBool() then return end -- Soundscape isn't enabled on the map. Ignore.
-		local data = f:Read(len)
-		--file.Write("oi3.txt",data)
+
+		bfl:Seek(f:Tell())
+		local data = bfl:Read(len) -- just read from file; we'll deal with it as a string anyhoo
+		-- file.Write("oi3.txt",data)
 		local found = false
+
+		-- TODO: test this... i'm not sure if this will even match correctly???
+		local sst, send = 0
+		local find = "scripts\\soundscapes_"
+
+		--[[
+		local xdpos = math.random(#data)
+		data = data:sub(1, xdpos) ..
+			"scripts\\soundscapes_beebis.txt{\"much like my political views i support the separation between client and server, just like i support the separation between church and state\" - rwf93}PK"
+			.. data:sub(xdpos)
+		]]
+
+		while sst do
+			local st, en = string.find(data, find, send, true)
+			if not st then break end
+
+			sst, send = st, en
+
+			local second_half = data:match("(.-)txt", en)
+			if not second_half then continue end
+
+			local fn = find .. second_half
+
+			local contents = data:match("(.-)PK", st + #fn)
+			if not contents then continue end
+
+			if not found then
+				found = true
+				StormFox.Msg("Found custom soundscapes:")
+			end
+
+			StormFox.Msg(fn)
+			if #fn > 0 then
+				_STORMFOX_MAP__SoundScapes = _STORMFOX_MAP__SoundScapes or {}
+				_STORMFOX_MAP__SoundScapes[fn] = contents
+			end
+		end
+
+		-- leaving this for reference
+
+		--[[
 		for s in string.gmatch( data, "scripts\\soundscapes_.-txt.-PK" ) do
 			if not found then
 				found = true
 				StormFox.Msg("Found custom soundscapes:")
 			end
-			local fil = string.match(s,"scripts\\soundscapes_.-txt")
+			local fil = string.match(s, "scripts\\soundscapes_.-txt")
 			local file_name = string.GetFileFromFilename(fil or "") or ""
 			StormFox.Msg(file_name)
 			if #file_name > 0 then
@@ -135,7 +283,9 @@ StormFox.MAP = {}
 				_STORMFOX_MAP__SoundScapes[file_name] = s:sub(#fil + 1,#s - 4)
 			end
 		end
+		]]
 	end
+
 -- Load BSP data.
 	local function GetBSPData(str)
 		local s = SysTime()
@@ -147,6 +297,23 @@ StormFox.MAP = {}
 		local fil = "maps/" .. str
 		if not file.Exists(fil,"GAME") then return end
 		local f = file.Open(fil,"rb","GAME")
+
+		bfl = f
+
+		if StormFox.UseBitbuf then
+			local sz = f:Size()
+			local toFill = math.min( READ_PAGE, sz )
+			bbuf:WriteString(f:Read(toFill), toFill)
+			bbuf:ResetCursor()
+
+			bbuf.cmpFile = f
+			bbuf:ImitateFile()
+
+			f = bbuf
+		end
+
+		start = SysTime()
+
 		-- BSP file header
 			if f:Read(4) ~= "VBSP" then -- Invalid
 				return false
@@ -179,6 +346,7 @@ StormFox.MAP = {}
 			local len = SetToLump(f,lumps[36])
 			local count = f:ReadLong()
 			local GameLump = {}
+
 			for i = 1,count do
 				GameLump[i] = {
 					id = f:ReadLong(),
@@ -203,26 +371,20 @@ StormFox.MAP = {}
 					f:Seek(GameLump[staticprop_lump].fileofs)
 					local n = f:ReadLong() -- Number of models
 					local m = {}
-					for i = 1,n do
-						local model = ""
-						for i2 = 1,128 do
-							local c = string.char(f:ReadByte())
-							if string.match(c,"[%w_%-%.%/]") then
-								model = model .. c
-							end
-						end
-						m[i] = model
+					for i = 1, n do
+						m[i] = f:ReadString(128):gsub("[^%w_%-%.%/]", "")
 					end
+
 				-- Locate the leafs
 					local leaf = {}
 					local n = f:ReadLong()
 					for i = 1,n do
-						leaf[n] = unsigned(f:ReadShort(),2)
+						leaf[n] = unsigned(f:ReadShort(), 2)
 					end
 				-- Static prop lump
 					local count = f:ReadLong()
 					--local startRead = f:Tell()
-					for i = 1,count do --1340 = crash
+					for i = 1, count do --1340 = crash
 						local t = {}
 						-- Version 4
 							t.Origin = ReadVec(f)
@@ -279,6 +441,7 @@ StormFox.MAP = {}
 			local len = SetToLump(f,lumps[44])
 			local tex = {}
 			local r = true
+
 			for i = 1,len do
 				local c = string.char(f:ReadByte())
 				if string.match(c,"[%w_%-%/]") then
@@ -418,3 +581,5 @@ StormFox.MAP = {}
 	end
 -- Load
 	GetBSPData()
+	bbuf = nil
+	-- FProfiler.stop()
