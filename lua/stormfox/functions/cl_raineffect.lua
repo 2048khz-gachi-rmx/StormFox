@@ -15,7 +15,7 @@ local particles = {}
 	particles.bg = {}
 
 local rain_range = 250
-local random_side = 400
+local random_side = 600
 local downfallNorm = Vector(0,0,1)
 local SysTime = SysTime
 local EyeAngles = EyeAngles
@@ -252,23 +252,25 @@ hook.Add("Think","StormFox - RenderFalldownThink",function()
 		local m = maxmake * ft * max_gauge
 
 		for i = 1,min(m,maxmake) do
-			local s = ran(1,4)
+			local s = ran(1, 4)
 			local xx = 0
 			local yy = 0
-			local mindistance = random_side * 3
-			local maxdistance = random_side * 6
+			local mindistance = random_side * 2
+			local maxdistance = random_side * 4
+
+			local xRan = ran()
 
 			if s == 1 then
-				xx = ubLerp(ran(), mindistance, maxdistance)
+				xx = ubLerp(xRan, mindistance, maxdistance)
 				yy = ubLerp(ran(), -mindistance, mindistance)
 			elseif s == 2 then
-				xx = -ubLerp(ran(), mindistance, maxdistance)
+				xx = -ubLerp(xRan, mindistance, maxdistance)
 				yy = ubLerp(ran(), -mindistance, mindistance)
 			elseif s == 3 then -- == 1?
-				yy = ubLerp(ran(), mindistance, maxdistance)
+				yy = ubLerp(xRan, mindistance, maxdistance)
 				xx = ubLerp(ran(), -mindistance, mindistance)
 			elseif s == 4 then -- == 2?
-				yy = -ubLerp(ran(), mindistance, maxdistance)
+				yy = -ubLerp(xRan, mindistance, maxdistance)
 				xx = ubLerp(ran(), -mindistance, mindistance)
 			end
 
@@ -284,7 +286,7 @@ hook.Add("Think","StormFox - RenderFalldownThink",function()
 					drop.norm = fDN * break_
 					drop.smoke = smoke
 					drop.a = 0
-					drop.max_a = ubLerp(Gauge / 10, 0.3, 1)
+					drop.max_a = ubLerp(Gauge / 10, ubLerp(xRan, 0.1, 0.3), ubLerp(xRan, 0.3, 1))
 					drop.size = size
 					drop.length_m = ran(2,4)
 					drop.endpos = tr.HitPos
@@ -599,7 +601,7 @@ end)
 					sharedVec:Mul(10)
 					sharedVec:Add(data.pos)
 
-					render_DrawSprite(sharedVec, s, s * ubLerp(data.squish, 0.7, 1.5), rainCol)
+					render_DrawSprite(sharedVec, s, s * ubLerp(data.squish, 1.2, 1.7), rainCol)
 				end
 			end
 			if raindebug then
