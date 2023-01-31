@@ -20,6 +20,10 @@ local downfallNorm = Vector(0,0,1)
 local SysTime = SysTime
 local EyeAngles = EyeAngles
 
+local function ubLerp(f, a, b)
+	return a + ( b - a ) * f
+end
+
 local raindebug = StormFox.GetNetworkData("Raindebug",false)
 local materials = {}
 	materials.Rain 				= Material("stormfox/raindrop.png","noclamp smooth")
@@ -153,125 +157,157 @@ local Gauge = StormFox.GetData("Gauge",0)
 		downfallNorm = Angle(0,windangle,0):Forward() * wind
 			downfallNorm.z = downfallNorm.z + downspeed
 	end)
+
+local downForce = Vector()
+
 -- Create Downfall drops
-	hook.Add("Think","StormFox - RenderFalldownThink",function()
-		if not StormFox.EFEnabled() then return end
-		if Gauge <= 0 then return end
-		local ft = RealFrameTime()
-		-- Choose rain or snow
-			local IsRain = true
-			if temp < 5 and snowEnabled then
-				if temp < -2 then
-					IsRain = false
-				else
-					-- Choose
-					IsRain = temp > ran(-2,5)
-				end
-			end
-		-- Calc max particles
-			local exp = StormFox.GetExspensive()
-			local maxparticles = max(exp,1) * 32
+hook.Add("Think","StormFox - RenderFalldownThink",function()
+	if not StormFox.EFEnabled() then return end
+	if Gauge <= 0 then return end
 
-			local maxbg = 32 + max(exp,1) * 16 * (Gauge / 10)
-			if not IsRain then maxbg = maxbg * 0.5 end
-		-- Calk weight and dir
-			local weight = IsRain and 1 or 0.2
-			local fDN = Vector(downfallNorm.x,downfallNorm.y,downfallNorm.z) * weight
-		-- Create particle
-			if #particles.main < maxparticles then
-				local maxmake = maxparticles - #particles.main
-				local m = maxmake * ft * Gauge * 2
-				for i = 1,min(m,maxmake) do
-					-- Make a rain/snowdrop
+	local sharedVec = Vector()
+	local ft = RealFrameTime()
 
-					local testpos = mainpos + Vector(ran(-random_side,random_side) + fDN.x * -(20 / weight) ,ran(-random_side,random_side) + fDN.y * -(20 / weight),1 / weight * 30)
-						testpos.z = math.min(testpos.z,mainpos.z) - ran(40)
-					local smoke = ran(100) < clamp(wind * 2,0,70) - 14
-					local size = IsRain and (smoke and 20 * Gauge or clamp(Gauge / ran(3,5),1,3)) or (smoke and ran(10,30) * Gauge or clamp(Gauge / ran(3,5),1,3))
-					local tr = ETCalcTrace(testpos,size,fDN)
-					local break_ = IsRain and 1 or max(wind / 25,0.4)
-					if tr then
-						local drop = {}
-							drop.smoke = smoke
-						-- StartPos
-							drop.pos = testpos
-						-- Norm
-							drop.norm = fDN * break_
-						-- Random
-							drop.length_m = ran(1,2)
-							drop.size = size
-						-- EndPos
-							drop.endpos = tr.HitPos
-						-- HitNormal
-							drop.hitnorm = tr.HitNormal
-						-- HitWater
-							drop.hitwater = tr.HitWater
-						-- NoDrop
-							drop.nodrop = string.find(tr.HitTexture,"TOOLS/TOOLSSKYBOX") or string.find(tr.HitTexture,"TOOLS/TOOLSINVISIBLE") or smoke or false
-							drop.alive = true
-							drop.r = ran(360)
-							drop.r2 = ran(10)
-							drop.rain = IsRain
-							drop.material = smoke and (IsRain and materials.RainSmoke or materials.SnowSmoke) or (IsRain and materials.Rain or materials.Snow)
-						table.insert(particles.main,drop)
-					end
-				end
-			end
-		-- Create Multi (background) Particle
-			if #particles.bg < maxbg then
-				local maxmake = maxbg - #particles.bg
-				local m = maxmake * ft * Gauge
+	local IsRain = true
 
-				for i = 1,min(m,maxmake) do
-					local s = ran(1,4)
-					local xx = 0
-					local yy = 0
-					local mindistance = random_side
-					if s == 1 then
-						xx = ran(mindistance,random_side * 4)
-						yy = ran(random_side * -2,random_side * 2)
-					elseif s == 2 then
-						xx = ran(mindistance,random_side * 4) * -1
-						yy = ran(random_side * -2,random_side * 2)
-					elseif s == 3 then
-						yy = ran(mindistance,random_side * 4)
-						xx = ran(random_side * -2,random_side * 2)
-					elseif s == 4 then
-						yy = ran(mindistance,random_side * 4) * -1
-						xx = ran(random_side * -2,random_side * 2)
-					end
-					local testpos = mainpos + Vector(xx + fDN.x * -(20 / weight) ,yy + fDN.y * -(20 / weight),1 / weight * 30)
-					local smoke = ran(100) < clamp(wind * 2,0,70) - 14
-					local size = smoke and (IsRain and 30 or 20 * Gauge) or (clamp(Gauge / ran(3,5),1,3) * (IsRain and 32 or 32))
-					local tr = ETCalcTrace(testpos,size,fDN)
-					if tr then
-						local drop = {}
-						local break_ = smoke and (IsRain and 0.5 or 0.7) or 1
-							drop.pos = testpos
-							drop.norm = fDN * break_
-							drop.smoke = smoke
-							drop.a = 0
-							drop.size = size
-							drop.length_m = ran(2,4)
-							drop.endpos = tr.HitPos
-							drop.hitnorm = tr.HitNormal
-							drop.hitwater = string.find(tr.HitTexture,"water")
-							drop.nodrop = string.find(tr.HitTexture,"TOOLS/TOOLSSKYBOX") or string.find(tr.HitTexture,"TOOLS/TOOLSINVISIBLE") or false
-							drop.alive = true
-							drop.r = ran(360)
-							drop.r2 = ran(10)
-							drop.ang = fDN:Angle()
-							drop.rain = IsRain
-							drop.material = IsRain and (smoke and materials.RainSmoke or materials.RainMultiTexture) or (smoke and materials.SnowSmoke or materials.SnowMultiTexture)
-						table.insert(particles.bg,drop)
-						--if raindebug then
-							--debugoverlay.Cross(testpos,10,0.1,Color(0,255,0))
-							--debugoverlay.Cross(tr.HitPos,10,0.1,Color(255,255,255))
-						--end
-					end
-				end
+	if temp < 5 and snowEnabled then
+		if temp < -2 then
+			IsRain = false
+		else
+			IsRain = temp > ran(-2,5)
+		end
+	end
+
+	local exp = StormFox.GetExspensive()
+	local maxparticles = max(exp,1) * 32
+
+	local maxbg = 32 + max(exp,1) * 16 -- * (Gauge / 10)
+	if not IsRain then maxbg = maxbg * 0.5 end
+
+	local weight = IsRain and 1 or 0.2
+
+	downForce:Set(downfallNorm)
+
+	if not IsRain then
+		downForce:Mul(weight)
+	end
+
+	local fDN = downForce
+	local fX, fY, fZ = downForce:Unpack()
+	local max_gauge = 10
+
+	if #particles.main < maxparticles then
+		local maxmake = maxparticles - #particles.main
+		local m = maxmake * ft * max_gauge * 2
+		for i = 1,min(m,maxmake) do
+			-- Make a rain/snowdrop
+
+			sharedVec:SetUnpacked(
+				ubLerp(ran(), -random_side, random_side) + fX * -(20 / weight),
+				ubLerp(ran(), -random_side, random_side) + fY * -(20 / weight),
+				ubLerp(ran(), 1 / weight * 25, 1 / weight * 30) -- desync the vertical speed for more uniform drops
+			)
+
+			sharedVec:Add(mainpos)
+
+			local testpos = sharedVec
+			testpos[3] = math.min(testpos[3], mainpos[3]) - ran() * 40
+
+			local smoke = ran(100) < min(wind * 2, 70) - 14
+
+			local size = IsRain and (smoke and 20 * Gauge or clamp(Gauge / ran(3,5),1,3)) or (smoke and ran(10,30) * Gauge or clamp(Gauge / ran(3,5),1,3))
+			local tr = ETCalcTrace(testpos, size, fDN)
+			local break_ = IsRain and 1 or max(wind / 25,0.4)
+			if tr then
+				local drop = {}
+					drop.smoke = smoke
+				-- StartPos
+					drop.pos = Vector(testpos)
+				-- Norm
+					drop.norm = fDN * break_
+				-- Random
+					drop.length_m = ran(1,2)
+					drop.size = size
+				-- EndPos
+					drop.endpos = tr.HitPos
+				-- HitNormal
+					drop.hitnorm = tr.HitNormal
+				-- HitWater
+					drop.hitwater = tr.HitWater
+				-- NoDrop
+					drop.nodrop = string.find(tr.HitTexture,"TOOLS/TOOLSSKYBOX") or string.find(tr.HitTexture,"TOOLS/TOOLSINVISIBLE") or smoke or false
+					drop.alive = true
+					drop.r = ran(360)
+					drop.r2 = ran(10)
+					drop.rain = IsRain
+					drop.material = smoke and (IsRain and materials.RainSmoke or materials.SnowSmoke) or (IsRain and materials.Rain or materials.Snow)
+				table.insert(particles.main,drop)
 			end
-	end)
+		end
+	end
+-- Create Multi (background) Particle
+	if #particles.bg < maxbg then
+		local maxmake = maxbg - #particles.bg
+
+		local m = maxmake * ft * max_gauge
+
+		for i = 1,min(m,maxmake) do
+			local s = ran(1,4)
+			local xx = 0
+			local yy = 0
+			local mindistance = random_side * 3
+			local maxdistance = random_side * 6
+
+			if s == 1 then
+				xx = ubLerp(ran(), mindistance, maxdistance)
+				yy = ubLerp(ran(), -mindistance, mindistance)
+			elseif s == 2 then
+				xx = -ubLerp(ran(), mindistance, maxdistance)
+				yy = ubLerp(ran(), -mindistance, mindistance)
+			elseif s == 3 then -- == 1?
+				yy = ubLerp(ran(), mindistance, maxdistance)
+				xx = ubLerp(ran(), -mindistance, mindistance)
+			elseif s == 4 then -- == 2?
+				yy = -ubLerp(ran(), mindistance, maxdistance)
+				xx = ubLerp(ran(), -mindistance, mindistance)
+			end
+
+			local testpos = mainpos + Vector(xx + fDN.x * -(20 / weight) ,yy + fDN.y * -(20 / weight),1 / weight * 30)
+			local smoke = ran(100) < clamp(wind * 2,0,70) - 14
+			local size = smoke and (IsRain and 30 or 20 * max_gauge) or (clamp(max_gauge / ran(3,5), 1, 3) * (IsRain and 32 or 64 + Gauge * 4))
+			local tr = ETCalcTrace(testpos,size,fDN)
+
+			if tr then
+				local drop = {}
+				local break_ = smoke and (IsRain and 0.5 or 0.7) or 1
+					drop.pos = testpos
+					drop.norm = fDN * break_
+					drop.smoke = smoke
+					drop.a = 0
+					drop.max_a = ubLerp(Gauge / 10, 0.3, 1)
+					drop.size = size
+					drop.length_m = ran(2,4)
+					drop.endpos = tr.HitPos
+					drop.hitnorm = tr.HitNormal
+					drop.hitwater = string.find(tr.HitTexture,"water")
+					drop.nodrop = string.find(tr.HitTexture,"TOOLS/TOOLSSKYBOX") or string.find(tr.HitTexture,"TOOLS/TOOLSINVISIBLE") or false
+					drop.alive = true
+					drop.r = ran(360)
+					drop.r2 = ran(10)
+					drop.ang = fDN:Angle()
+					drop.rain = IsRain
+					drop.squish = ran()
+					drop.material = IsRain and (smoke and materials.RainSmoke or materials.RainMultiTexture) or (smoke and materials.SnowSmoke or materials.SnowMultiTexture)
+				table.insert(particles.bg,drop)
+				--if raindebug then
+					--debugoverlay.Cross(testpos,10,0.1,Color(0,255,0))
+					--debugoverlay.Cross(tr.HitPos,10,0.1,Color(255,255,255))
+				--end
+			end
+		end
+	end
+end)
+
 -- Handle and kill raindrops
 	local rainsplash_w = Material("effects/splashwake3")
 	local rainsplash = Material("effects/splash4")
@@ -282,146 +318,159 @@ local Gauge = StormFox.GetData("Gauge",0)
 	hook.Add("Think","StormFox - RenderFalldownHandle",function()
 		if not StormFox.EFEnabled() then return end
 		local FT = (SysTime() - last) * 100
-			last = SysTime()
+		last = SysTime()
+
 		local exp = StormFox.GetExspensive()
 		local Gauge = StormFox.GetData("Gauge",0)
 		local eyepos = StormFox.GetEyePos()
 		if LocalPlayer():WaterLevel() >= 3 then return end
 		--local sky_col = StormFox.GetData("Bottomcolor",Color(204,255,255))
 		--	sky_col = Color(max(sky_col.r,24),max(sky_col.g,155),max(sky_col.b,155),155)
-		local sky_col = Color(255,255,255)
-		local snowmat = StormFox.GetData("SnowTexture") or Material("particle/snow")
-		for id,data in ipairs(particles.main) do
-			if data.alive then
-				local speed = data.norm * -FT
-				if not data.markfordeath and (data.pos.z <= data.endpos.z + speed.z + data.size / 2 or data.pos.z < eyepos.z - 200) then
-					-- mark for death
-					data.markfordeath = true
-					-- Skip to the bottom
-					if data.pos.z >= eyepos.z - 200 then
-						data.pos = data.endpos
-						data.size = data.size / 2
-					else
-						data.alive = false
-					end
-				elseif data.markfordeath then
-					data.alive = false
-					data.markfordeath = true
-					if exp >= 4 and ran(4) < 2 and not data.nodrop and not data.smoke then
-						-- Splash
-						if data.rain then
-							if data.hitwater then
-								local p = _STORMFOX_PEM:Add(rainsplash_w,data.endpos + Vector(0,0,1))
-									p:SetAngles(data.hitnorm:Angle())
-									p:SetStartSize(8)
-									p:SetEndSize(40)
-									p:SetDieTime(1)
-									p:SetEndAlpha(0)
-									p:SetStartAlpha(4)
-							else
-								local p = _STORMFOX_PEM:Add(rainsplash,data.endpos + Vector(0,0,1))
-									p:SetAngles(data.hitnorm:Angle())
-									p:SetStartSize(4)
-									p:SetEndSize(10)
-									p:SetDieTime(0.2)
-									p:SetEndAlpha(0)
-									p:SetStartAlpha(40)
-								--	p:SetColor(sky_col)
 
-								local p2 = _STORMFOX_PEM:Add(rainsplash,data.endpos + Vector(0,0,1))
-									p2:SetAngles((-data.hitnorm):Angle())
-									p2:SetStartSize(4)
-									p2:SetEndSize(10)
-									p2:SetDieTime(0.2)
-									p2:SetEndAlpha(0)
-									p2:SetStartAlpha(40)
-							--		p2:SetColor(sky_col)
-							end
-						else
-							-- Snow
-							if data.hitwater then
-								local p = _STORMFOX_PEM:Add(rainsplash_w,data.endpos + Vector(0,0,1))
+		local snowmat = StormFox.GetData("SnowTexture") or Material("particle/snow")
+
+		for id,data in ipairs(particles.main) do
+			if not data.alive then continue end
+			local speed = data.norm * -FT
+			if not data.markfordeath and (data.pos.z <= data.endpos.z + speed.z + data.size / 2 or data.pos.z < eyepos.z - 200) then
+				-- mark for death
+				data.markfordeath = true
+				-- Skip to the bottom
+				if data.pos.z >= eyepos.z - 200 then
+					data.pos = data.endpos
+					data.size = data.size / 2
+				else
+					data.alive = false
+				end
+			elseif data.markfordeath then
+				data.a = (data.a or 1) - FT / 250
+				data.alive = data.a <= 0
+
+				if exp >= 4 and ran(4) < 2 and not data.nodrop and not data.smoke then
+					-- Splash
+					if data.rain then
+						if data.hitwater then
+							local p = _STORMFOX_PEM:Add(rainsplash_w,data.endpos + Vector(0,0,1))
 								p:SetAngles(data.hitnorm:Angle())
 								p:SetStartSize(8)
 								p:SetEndSize(40)
 								p:SetDieTime(1)
 								p:SetEndAlpha(0)
 								p:SetStartAlpha(4)
-							else
-								local p = _STORMFOX_PEM2d:Add(snowmat,data.endpos + Vector(0,0,1))
-								p:SetStartSize(min(1.5,data.size))
-								p:SetEndSize(min(1.5,data.size))
-								p:SetDieTime(4)
+						else
+							local p = _STORMFOX_PEM:Add(rainsplash,data.endpos + Vector(0,0,1))
+								p:SetAngles(data.hitnorm:Angle())
+								p:SetStartSize(4)
+								p:SetEndSize(10)
+								p:SetDieTime(0.2)
 								p:SetEndAlpha(0)
-								p:SetStartAlpha(200)
-							end
+								p:SetStartAlpha(40)
+							--	p:SetColor(sky_col)
+
+							local p2 = _STORMFOX_PEM:Add(rainsplash,data.endpos + Vector(0,0,1))
+								p2:SetAngles((-data.hitnorm):Angle())
+								p2:SetStartSize(4)
+								p2:SetEndSize(10)
+								p2:SetDieTime(0.2)
+								p2:SetEndAlpha(0)
+								p2:SetStartAlpha(40)
+						--		p2:SetColor(sky_col)
+						end
+					else
+						-- Snow
+						if data.hitwater then
+							local p = _STORMFOX_PEM:Add(rainsplash_w,data.endpos + Vector(0,0,1))
+							p:SetAngles(data.hitnorm:Angle())
+							p:SetStartSize(8)
+							p:SetEndSize(40)
+							p:SetDieTime(1)
+							p:SetEndAlpha(0)
+							p:SetStartAlpha(4)
+						else
+							local p = _STORMFOX_PEM2d:Add(snowmat,data.endpos + Vector(0,0,1))
+							p:SetStartSize(min(1.5,data.size))
+							p:SetEndSize(min(1.5,data.size))
+							p:SetDieTime(4)
+							p:SetEndAlpha(0)
+							p:SetStartAlpha(200)
 						end
 					end
-				else
-					data.pos = data.pos - speed
 				end
 			end
+
+			if data.alive then
+				data.a = min(1, (data.a or 0) + FT / 50)
+				data.pos = data.pos - speed
+			end
 		end
+
 		for i = #particles.main,1,-1 do
 			if not particles.main[i].alive then
 				table.remove(particles.main,i)
 			end
 		end
+
 		for id,data in ipairs(particles.bg) do
-			if data.alive then
-				local speed = data.norm * -FT
-				if not data.markfordeath and (data.pos.z <= data.endpos.z + speed.z + data.size / 2 or data.pos.z < eyepos.z - 200) then
-					-- Skip to the bottom
-					if data.pos.z >= eyepos.z - 200 then
-						data.pos = data.endpos
-						data.markfordeath = true
-					else
-						data.alive = false
-					end
-				elseif data.markfordeath then
+			if not data.alive then continue end
+
+			local speed = data.norm * -FT
+			if not data.markfordeath and (data.pos.z <= data.endpos.z + speed.z - data.size / 2 or data.pos.z < eyepos.z - 200) then
+				-- Skip to the bottom
+				if data.pos.z >= eyepos.z - 400 then
+					-- data.pos = data.endpos
+					data.markfordeath = true
+				else
 					data.alive = false
-					if exp >= 4 and ran(4) < 2 and not data.nodrop then
-						-- Splash
-						local size = max(wind * 2.2,30)
-						if data.rain then
-							local p = _STORMFOX_PEM2d:Add(table.Random(rainmat_smoke),data.endpos + (data.hitnorm * size) ) -- + Vector(0,0,ran(size / 2,size * 0.4)
-									p:SetAngles(data.hitnorm:Angle())
-									p:SetStartSize(size)
-									p:SetEndSize(size * 1.2)
-									p:SetDieTime(ran(2,5))
-									p:SetEndAlpha(0)
-									p:SetStartAlpha( min(max(1000 / _STORMFOX_PEM2d:GetNumActiveParticles(),2),10) )
-									p:SetColor(255,255,255)
-									p:SetGravity(Vector(0,0,ran(4)))
-									p:SetCollide(true)
-									p:SetBounce(0)
-									p:SetAirResistance(20)
-									p:SetVelocity(Vector(downfallNorm.x * wind,downfallNorm.y * wind,0) + data.hitnorm * -10)
-									p:SetCollideCallback( pf )
-									--	p:SetStartLength(1)
-						elseif false then
-							-- Snow
-							if data.hitwater then
-								local p = _STORMFOX_PEM:Add(rainsplash_w,data.endpos + Vector(0,0,1))
+				end
+			elseif data.markfordeath then
+				data.a = (data.a or 1) - FT / 20
+				data.alive = data.a > 0
+
+				if exp >= 4 and ran(4) < 2 and not data.nodrop then
+					-- Splash
+					local size = max(wind * 2.2,30)
+					if data.rain then
+						local p = _STORMFOX_PEM2d:Add(table.Random(rainmat_smoke),data.endpos + (data.hitnorm * size) ) -- + Vector(0,0,ran(size / 2,size * 0.4)
 								p:SetAngles(data.hitnorm:Angle())
-								p:SetStartSize(8)
-								p:SetEndSize(30)
-								p:SetDieTime(1)
+								p:SetStartSize(size)
+								p:SetEndSize(size * 1.2)
+								p:SetDieTime(ran(2,5))
 								p:SetEndAlpha(0)
-								p:SetStartAlpha(50)
-							else
-								local p = _STORMFOX_PEM2d:Add(snowmat,data.endpos + Vector(0,0,1))
-								p:SetStartSize(min(1.5,data.size))
-								p:SetEndSize(min(1.5,data.size))
-								p:SetDieTime(4)
-								p:SetEndAlpha(0)
-								p:SetStartAlpha(255)
-							end
+								p:SetStartAlpha( min(max(1000 / _STORMFOX_PEM2d:GetNumActiveParticles(),2),10) )
+								p:SetColor(255,255,255)
+								p:SetGravity(Vector(0,0,ran(4)))
+								p:SetCollide(true)
+								p:SetBounce(0)
+								p:SetAirResistance(20)
+								p:SetVelocity(Vector(downfallNorm.x * wind,downfallNorm.y * wind,0) + data.hitnorm * -10)
+								p:SetCollideCallback( pf )
+								--	p:SetStartLength(1)
+						data.alive = false
+					elseif false then
+						-- Snow
+						if data.hitwater then
+							local p = _STORMFOX_PEM:Add(rainsplash_w,data.endpos + Vector(0,0,1))
+							p:SetAngles(data.hitnorm:Angle())
+							p:SetStartSize(8)
+							p:SetEndSize(30)
+							p:SetDieTime(1)
+							p:SetEndAlpha(0)
+							p:SetStartAlpha(50)
+						else
+							local p = _STORMFOX_PEM2d:Add(snowmat,data.endpos + Vector(0,0,1))
+							p:SetStartSize(min(1.5,data.size))
+							p:SetEndSize(min(1.5,data.size))
+							p:SetDieTime(4)
+							p:SetEndAlpha(0)
+							p:SetStartAlpha(255)
 						end
 					end
-				else
-					data.pos = data.pos - speed
 				end
+			end
+
+			if data.alive then -- still alive, keep the sim
+				data.a = min(data.max_a or 1, data.a + FT / 50)
+				data.pos = data.pos - speed
 			end
 		end
 		for i = #particles.bg,1,-1 do
@@ -434,6 +483,16 @@ local Gauge = StormFox.GetData("Gauge",0)
 	local render_DrawBeam = render.DrawBeam
 	local render_DrawSprite = render.DrawSprite
 	local render_SetMaterial = render.SetMaterial
+
+	local sharedCol = Color(204, 255, 255)
+
+	local rainCol = Color(0, 0, 0)
+	local rainColSmoke = Color(0, 0, 0)
+	local snowCol = Color(0, 0, 0)
+	local snowColSmoke = Color(0, 0, 0)
+
+	local sharedVec = Vector()
+
 	local RenderRain = function(depth, sky)
 		--if depth or sky then return end
 		--if true then return end
@@ -445,27 +504,47 @@ local Gauge = StormFox.GetData("Gauge",0)
 		local Gauge = StormFox.GetData("Gauge",0)
 		local alpha = 75 + min(Gauge * 10,150)
 
-		local sky_col = StormFox.GetData("Bottomcolor",Color(204,255,255))
-			sky_col = Color(max(sky_col.r,4),max(sky_col.g,55),max(sky_col.b,55),max(alpha,155))
+		rainCol:Set(GaugeColor.r, GaugeColor.g, GaugeColor.b, 5)
+		rainColSmoke:Set(GaugeColor.r * 0.5, GaugeColor.g * 0.5, GaugeColor.b * 0.5, 15)
+
+		snowCol:Set(GaugeColor.r * 0.5, GaugeColor.g * 0.5, GaugeColor.b * 0.5)
+		snowColSmoke:Set(GaugeColor.r * 0.5, GaugeColor.g * 0.5, GaugeColor.b * 0.5, max(5, Gauge * 2))
+
+		local lastMat
 		for id,data in ipairs(particles.main) do
-			render_SetMaterial(data.material or materials.Rain)
+			local useMat = data.material or materials.Rain
+			if lastMat ~= useMat then
+				render_SetMaterial(useMat)
+				lastMat = useMat
+			end
+
 			if data.rain then
 				if data.smoke then
-					render_DrawSprite(data.pos, data.size, data.size,Color(GaugeColor.r * 0.5,GaugeColor.g * 0.5,GaugeColor.b * 0.5,15))
+					render_DrawSprite(data.pos, data.size, data.size, rainColSmoke)
 				else
-					render_DrawBeam(  data.pos,  data.pos - data.norm * data.size * data.length_m, 10 * data.size, 1, 0, Color(GaugeColor.r,GaugeColor.g,GaugeColor.b,5))
+					sharedVec:Set(data.norm)
+					sharedVec:Mul(-data.size * data.length_m)
+					sharedVec:Add(data.pos)
+
+					render_DrawBeam(data.pos, sharedVec, 10 * data.size, 1, 0, rainCol)
 				end
 			else
 				if data.smoke then
-					render_DrawSprite(data.pos, data.size * 1.4, data.size * 1.4,Color(GaugeColor.r * 0.5,GaugeColor.g * 0.5,GaugeColor.b * 0.5,max(5,Gauge * 2)))
+					render_DrawSprite(data.pos, data.size * 1.4, data.size * 1.4, snowColSmoke)
 				else
 					local d = data.pos.z - data.endpos.z + data.r
 					local n = sin(d / 100)
 					local s = data.size
-					local nn = max(0,16 - wind)
-					render_DrawSprite(data.pos + Vector(n * nn,n * nn,0), s, s,Color(GaugeColor.r * 0.5,GaugeColor.g * 0.5,GaugeColor.b * 0.5))
+					local nn = max(0, 16 - wind)
+
+
+					sharedVec:SetUnpacked(n * nn, n * nn, 0)
+					sharedVec:Add(data.pos)
+
+					render_DrawSprite(sharedVec, s, s, snowCol)
 				end
 			end
+
 			if raindebug then
 				render_SetMaterial(Material("sprites/sent_ball"))
 				if data.smoke then
@@ -475,31 +554,59 @@ local Gauge = StormFox.GetData("Gauge",0)
 				end
 			end
 		end
+
+
+
 		for id,data in ipairs(particles.bg) do
+			-- do NOT render the background particles up against the player's eyes.
+			-- worst mistake of my life.
+			render.DepthRange(0.25, 1)
 			render_SetMaterial(data.material)
 			if data.rain then
+
+				sharedVec:Set(data.norm)
+				sharedVec:Mul(-data.size * data.length_m)
+				sharedVec:Add(data.pos)
+
 				if data.smoke then
 					--render.DrawBeam(startPos,  endPos                    ,number width,number textureStart,number textureEnd,table color)
-					render_DrawBeam(  data.pos,  data.pos - data.norm * data.size * data.length_m, 6 * data.size, 1, 0, Color(GaugeColor.r,GaugeColor.g,GaugeColor.b,6))
+					rainCol.a = 6
+					render_DrawBeam(  data.pos,  sharedVec, 6 * data.size, 1, 0, rainCol)
 				else
-					render_DrawBeam(  data.pos,  data.pos - data.norm * data.size * data.length_m, data.size, 2, 0, Color(GaugeColor.r,GaugeColor.g,GaugeColor.b,25))
+					rainColSmoke.a = 25
+					render_DrawBeam(  data.pos,  sharedVec, data.size, 2, 0, rainColSmoke)
 				end
 			else
 				if data.smoke then
-					data.a = max(data.a + RealFrameTime() * 0.1,5)
-					render_DrawBeam(  data.pos,  data.pos - data.norm * data.size * data.length_m,  data.size * 10, 1, 0, Color(GaugeColor.r,GaugeColor.g,GaugeColor.b,data.a))
+					rainCol.a = data.a
+
+					sharedVec:Set(data.norm)
+					sharedVec:Mul(-data.size * data.length_m)
+					sharedVec:Add(data.pos)
+
+					render_DrawBeam(  data.pos,  sharedVec,  data.size * 10, 1, 0, rainCol)
 				else
+					rainCol.a = 55 * (data.a or 1)
+
 					local d = data.pos.z - data.endpos.z + data.r
 					local n = sin(d / 100)
 					local s = data.size * 10
 					local nn = clamp(20 - Gauge * 2,0,16)
-					render_DrawSprite(data.pos + Vector(n * nn,n * nn,0) + data.ang:Forward() * 10, s, s,Color(GaugeColor.r,GaugeColor.g,GaugeColor.b,55))
+
+					-- hack: /10 to then mul by 10
+					sharedVec:SetUnpacked(n * nn / 10, n * nn / 10, 0)
+					sharedVec:Add(data.ang:Forward())
+					sharedVec:Mul(10)
+					sharedVec:Add(data.pos)
+
+					render_DrawSprite(sharedVec, s, s * ubLerp(data.squish, 0.7, 1.5), rainCol)
 				end
 			end
 			if raindebug then
 				render_SetMaterial(Material("sprites/sent_ball"))
 				render_DrawSprite(data.endpos, 10,10,Color(255,0,0))
 			end
+			render.DepthRange(0, 1)
 		end
 	end
 
@@ -592,7 +699,8 @@ local Gauge = StormFox.GetData("Gauge",0)
 	local RainScreen_RT = GetRenderTarget("StormFox RainScreenRT",ScrW(),ScrH())
 	local ScreenDummy = Material("stormfox/effects/rainscreen_dummy")
 	local mat_Copy		= Material( "pp/fb" )
-	local rainscreen_mat = Material("stormfox/effects/rainscreen")
+	local rainscreen_mat = Material("stormfox/effects/rainscreen", "noclamp")
+
 	local old_raindrop = Material("sprites/heatwave")
 	local rainscreen_alpha = 0
 	hook.Add("HUDPaint","StormFox - RenderRainScreen",function()
@@ -610,7 +718,7 @@ local Gauge = StormFox.GetData("Gauge",0)
 		if acc <= 0 or not StormFox.Env.IsInRain() or Gauge <= 0 then
 			acc = -0.4 * ft
 		end
-		rainscreen_alpha = clamp(rainscreen_alpha + acc,0,0.8)
+		rainscreen_alpha = clamp(rainscreen_alpha + acc, 0, 0.6)
 		if rainscreen_alpha <= 0 then return end
 		--if true then return end
 		cam.Start2D()
@@ -623,6 +731,7 @@ local Gauge = StormFox.GetData("Gauge",0)
 			ScreenDummy:SetFloat( "$translucent", 1 )
 			ScreenDummy:SetFloat( "$alpha", 1 - rainscreen_alpha )
 			ScreenDummy:SetFloat( "$vertexalpha", 1 )
+
 			render.SetRenderTarget( RainScreen_RT )
 				render.SetMaterial( mat_Copy )
 				render.DrawScreenQuad()
@@ -631,7 +740,17 @@ local Gauge = StormFox.GetData("Gauge",0)
 		-- Draw raindrops
 			surface.SetDrawColor(255,255,255)
 			surface.SetMaterial(rainscreen_mat)
-			drawSemiRandomUV(0,0,w,h,scale,scale)
+			local st = SysTime()
+
+			for i=1, 2 do
+				
+				local mult = (-1) ^ i
+				local u0 = ((st + (i * 43.7)) * mult / 150) % 1
+				local v0 = (-(st + (i * 8.5)) / 30) % 1
+
+				surface.DrawTexturedRectUV(0, 0, w, h, u0, v0, (i * 2) + u0, (i * 2) + v0)
+				-- drawSemiRandomUV(0, 0, w, h, scale + y / scale, scale - y / scale)
+			end
 		-- Override screen with old and draw
 			ScreenDummy:SetTexture("$basetexture",RainScreen_RT)
 		cam.End2D()
@@ -649,13 +768,21 @@ local Gauge = StormFox.GetData("Gauge",0)
 		if oldrain then
 			ms = 2
 		end
+
+		local rain
+
 		for i,d in ipairs(screenParticles) do
 			if d.rain then
-				surface.SetDrawColor(255,255,255)
+				if not rain then
+					rain = true
+					surface.SetDrawColor(255, 255, 255)
+				end
+
 				surface.SetMaterial(oldrain and old_raindrop or rain_particles[d.p or 1])
 				surface.DrawTexturedRect(d.x,d.y,d.size * ms,d.size * 1.2 * ms)
 				screenParticles[i].y = d.y + grav * d.weight * 100 * FrameTime()
 			else
+				rain = false
 				local ll = d.life - SysTime()
 				surface.SetDrawColor(255,255,255,55 * ll)
 				surface.SetMaterial(snow_particles[d.p])
