@@ -330,7 +330,7 @@ end)
 
 	hook.Add("Think","StormFox - RenderFalldownHandle",function()
 		if not StormFox.EFEnabled() then return end
-		b:Open()
+		-- b:Open()
 		local FT = (SysTime() - last) * 100
 		last = SysTime()
 
@@ -532,7 +532,7 @@ end)
 			end
 		end
 
-		b:Close():print()
+		-- b:Close():print()
 	end)
 -- Render the raindrops
 	local render_DrawBeam = render.DrawBeam
@@ -557,7 +557,7 @@ end)
 		if not StormFox.GetData then return end
 		if depth or sky then return end
 
-		b:Open()
+		-- b:Open()
 
 		_STORMFOX_PEM:Draw()
 		_STORMFOX_PEM2d:Draw()
@@ -690,7 +690,7 @@ end)
 			end
 		end
 		render.DepthRange(0, 1)
-		b:Close():print()
+		-- b:Close():print()
 	end
 
 	hook.Add("PostDrawTranslucentRenderables", "StormFox - RenderFalldown", function(depth,sky)

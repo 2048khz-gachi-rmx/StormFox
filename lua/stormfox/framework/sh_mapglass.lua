@@ -252,7 +252,7 @@ local start = 0
 
 			local fn = find .. second_half
 
-			local contents = data:match("(.-)PK", st + #fn)
+			local contents = data:match("(.-)PK\x03\x04", st + #fn)
 			if not contents then continue end
 
 			if not found then
@@ -289,6 +289,11 @@ local start = 0
 -- Load BSP data.
 	local function GetBSPData(str)
 		local s = SysTime()
+		local times = {}
+		local function clip(name)
+			times[#times + 1] = {name, SysTime() - s}
+		end
+
 		table.Empty(BSPDATA)
 		str = game.GetMap()
 		if not string.match(str,".bsp$") then
@@ -312,6 +317,7 @@ local start = 0
 			f = bbuf
 		end
 
+		clip("ReadMap")
 		start = SysTime()
 
 		-- BSP file header
@@ -329,19 +335,25 @@ local start = 0
 		-- Read entities (LUMP 0)
 			BSPDATA.Entities = {}
 			local data = GetLump(f,lumps[1])
+
 			if data then
 				for s in string.gmatch( data, "%{.-%\n}" ) do
 					local t = util.KeyValuesToTable("t" .. s)
+					--[[local origin = s:match("\"origin\"[^\"]*\"([^\"]+)\"$")
+					local ang = s:match("\"angles\"[^\"]*\"([^\"]+)\"$")
+					local col = s:match("\"rendercolor\"[^\"]*\"([^\"]+)\"$")]]
+
 					-- Convert a few things to make it easier
-						t.origin = util.StringToType(t.origin or "0 0 0","Vector")
-						t.angles = util.StringToType(t.angles or "0 0 0","Angle")
-						local c = util.StringToType(t.rendercolor or "255 255 255","Vector")
-						t.rendercolor = Color(c.x,c.y,c.z)
+						t.origin = Vector(t.origin or nil)
+						t.angles = Angle(t.angles or nil)
+						local c = Vector(t.rendercolor or "255 255 255")
+						t.rendercolor = Color(c.x, c.y, c.z)
 					table.insert(BSPDATA.Entities,t)
 				end
 			else
 				error("Invalid BSP data. SF is unable to process the BSP.")
 			end
+			clip("ReadEntities")
 		-- Read game lump (LUMP 35) This is for static props and other things
 			local len = SetToLump(f,lumps[36])
 			local count = f:ReadLong()
@@ -436,6 +448,7 @@ local start = 0
 						table.insert(BSPDATA.StaticProps,t)
 					end
 			end
+			clip("ReadStaticProps")
 		-- Textures are tricky. You have to load them with LUMP 2, then LUMP 43 for the position in LUMP 44
 		-- Too complex .. lets just load the mapmaterial array
 			local len = SetToLump(f,lumps[44])
@@ -469,15 +482,20 @@ local start = 0
 				table.insert(texdata_t,dtexdata_t)
 			end
 			BSPDATA.Textures = texdata_t
+			clip("ReadTextures")
 		-- PAK search
 			local len = SetToLump(f,lumps[41])
 			if len > 10 then
-				StormFox.Msg("Found mapdata ..")
+				StormFox.Msg(("Found mapdata.. (%dkb)"):format(len / 1024))
 				PAKSearch(f,len)
 			end
 			--pak_data = f:Read(len)
+			clip("PAKSearch")
 		f:Close()
-		StormFox.Msg("Took " .. (SysTime() - s) .. " seconds to load the mapdata.")
+		StormFox.Msg(("Took %.2fs. to load the mapdata."):format(SysTime() - s))
+		for k,v in ipairs(times) do
+			StormFox.Msg(("\t%s: %.3fs."):format(v[1], v[2]))
+		end
 		hook.Run("StormFox.MAP.Loaded")
 	end
 -- MAP functions
@@ -547,6 +565,9 @@ local start = 0
 	function StormFox.MAP.FindClass(sClass)
 		local t = {}
 		for k,v in pairs(BSPDATA.Entities) do
+			-- rp_asheville, for example, has an entry without a classname
+			if not v.classname then continue end
+
 			if string.match(v.classname,sClass) then
 				table.insert(t,v)
 			end
@@ -556,6 +577,8 @@ local start = 0
 	function StormFox.MAP.FindTargetName(sTargetName)
 		local t = {}
 		for k,v in pairs(BSPDATA.Entities) do
+			if not v.classname then continue end
+
 			if string.match(v.targetname or "",sTargetName) then
 				table.insert(t,v)
 			end
