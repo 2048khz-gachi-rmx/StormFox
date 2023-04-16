@@ -23,11 +23,12 @@
 	local lastVersionCheck = cookie.GetNumber("StormFox.LastVersionCheck",0)
 	local toDay = os.time()
 	-- In case we got a new StormFox version
-		if lastVersionCheck < StormFox.Version then
-			cookie.Set("StormFox.LastVersionCheck",StormFox.Version)
-			nextCheck = 0 -- We check today
-		end
-	hook.Add("StormFox.PostEntity","StormFox.ReportVersion",function()
+	if lastVersionCheck < StormFox.Version then
+		cookie.Set("StormFox.LastVersionCheck",StormFox.Version)
+		nextCheck = 0 -- We check today
+	end
+
+	hook.Add("StormFox.PostEntity", "StormFox.ReportVersion", function()
 		if nextCheck > toDay then -- No need to check the webpage. Use the last number.
 			ReportVersion(cookie.GetNumber("StormFox.VersionLast", StormFox.Version))
 		else -- Check the workshop. Its been over a day.
@@ -40,6 +41,10 @@
 			local function onFail()
 				ReportVersion(cookie.GetNumber("StormFox.VersionLast", StormFox.Version))
 			end
-			http.Fetch("http://steamcommunity.com/sharedfiles/filedetails/?id=1132466603",onSuccess,onFail)
+
+			timer.Simple(0, function()
+				-- ISteamHTTP isn't available!
+				http.Fetch("http://steamcommunity.com/sharedfiles/filedetails/?id=1132466603", onSuccess, onFail)
+			end)
 		end
 	end)
