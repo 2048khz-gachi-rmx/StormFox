@@ -21,7 +21,8 @@ Tested from HL1 to CS:GO maps.
 ---------------------------------------------------------------------------]]
 StormFox.MAP = {}
 StormFox.TestingBitbuf = false
-StormFox.UseBitbuf = true
+StormFox.UseBitbuf = false
+StormFox.Profiling = false
 
 -- FProfiler.start()
 local bbuf = StormFox.UseBitbuf and BitBuffer:new()
@@ -60,7 +61,10 @@ if bbuf then
 		end
 
 		if not StormFox.TestingBitbuf then
-			self.Close = function() fl:Close() end
+			self.Close = function()
+				fl:Close()
+				self:Reset()
+			end
 			self.Read = self.ReadString
 			return
 		end
@@ -384,7 +388,7 @@ local start = 0
 					local n = f:ReadLong() -- Number of models
 					local m = {}
 					for i = 1, n do
-						m[i] = f:ReadString(128):gsub("[^%w_%-%.%/]", "")
+						m[i] = f:Read(128):gsub("[^%w_%-%.%/]", "")
 					end
 
 				-- Locate the leafs
@@ -492,10 +496,14 @@ local start = 0
 			--pak_data = f:Read(len)
 			clip("PAKSearch")
 		f:Close()
-		StormFox.Msg(("Took %.2fs. to load the mapdata."):format(SysTime() - s))
-		for k,v in ipairs(times) do
-			StormFox.Msg(("\t%s: %.3fs."):format(v[1], v[2]))
+
+		if StormFox.Profiling then
+			StormFox.Msg(("Took %.2fs. to load the mapdata."):format(SysTime() - s))
+			for k,v in ipairs(times) do
+				StormFox.Msg(("\t%s: %.3fs."):format(v[1], v[2]))
+			end
 		end
+
 		hook.Run("StormFox.MAP.Loaded")
 	end
 -- MAP functions
@@ -605,4 +613,19 @@ local start = 0
 -- Load
 	GetBSPData()
 	bbuf = nil
+
+	local old = collectgarbage("count")
+
+	MsgC(Color(155,155,255), "[StormFox] ", Color(255,255,255), "Don't mind me just collecting garbage... ")
+	collectgarbage()
+	collectgarbage()
+
+	local new = collectgarbage("count")
+	local diff = new - old
+	MsgC( ("done. (%.1fMB -> %.1fMB [%s%.1fMB])\n"):format(
+		old / 1024, new / 1024,
+		diff > 0 and "+" or "",
+		diff / 1024
+		) )
+
 	-- FProfiler.stop()
